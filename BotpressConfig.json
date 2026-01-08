@@ -1,0 +1,16 @@
+{
+  "botId": "legal-review",
+  "guardrails": {
+    "piiFilter": true,
+    "topicRestrictions": ["legal_documents_only"]
+  },
+  "flows": {
+    "main": {
+      "nodes": [
+        {"type": "text", "content": "Review this document: {{payload.result.type}}"},
+        // Add more for clauses, risks
+        {"type": "choice", "options": ["Approve", "Edit", "Reject"]}
+      ]
+    }
+  }
+}

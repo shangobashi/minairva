@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+crewai
+langchain
+langchain-anthropic  # For Claude
+langchain-community  # For FAISS
+faiss-cpu
+sentence-transformers  # HuggingFace embeddings
+torch  # For embeddings
+pypdf2  # For PDF parsing (alt to PyMuPDF)
+regex  # For PII redaction

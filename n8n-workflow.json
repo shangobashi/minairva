@@ -1,0 +1,132 @@
+{
+  "name": "Legal Document Triage",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "triage",
+        "options": {}
+      },
+      "name": "HTTP Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "triage-webhook"
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "http://python-app:8000/triage",
+        "jsonParameters": true,
+        "options": {},
+        "bodyParametersJson": "={{ { \"document_content\": $json.body.content } }}"
+      },
+      "name": "Call CrewAI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.result.risks.length }}",
+              "operation": "larger",
+              "value2": "0"
+            }
+          ]
+        }
+      },
+      "name": "If Risks",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "http://botpress:3000/webhook/review",
+        "jsonParameters": true,
+        "options": {},
+        "bodyParametersJson": "={{ $json }}"
+      },
+      "name": "Send to Botpress",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "https://example.com/route",  // Replace with CRM/email API
+        "jsonParameters": true,
+        "options": {},
+        "bodyParametersJson": "={{ $json }}"
+      },
+      "name": "Route Output",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "HTTP Trigger": {
+      "main": [
+        [
+          {
+            "node": "Call CrewAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call CrewAI": {
+      "main": [
+        [
+          {
+            "node": "If Risks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Risks": {
+      "main": [
+        [
+          {
+            "node": "Send to Botpress",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Botpress": {
+      "main": [
+        [
+          {
+            "node": "Route Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "saveExecutionProgress": true,
+    "executionTimeout": 3600
+  },
+  "id": "legal-triage"
+}

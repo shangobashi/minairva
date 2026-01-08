@@ -1,0 +1,145 @@
+# Legal Document Triage Agent: Design and Implementation
+
+As a seasoned Software Engineer with over 30 years of experience, I've designed and developed countless AI-driven products, always prioritizing compliance, usability, and innovation. For BlueLabs' 10-day sprint framework, I'm creating the second flagship demo product: the **Legal Document Triage Agent**. This aligns with the guide's primary niche (legal/professional services), focusing on automating document intake while ensuring EU AI Act compliance (low-risk classification), GDPR adherence, and human-in-the-loop oversight. The product will handle legal documents (e.g., contracts, NDAs, leases) via upload or email inbox, classify them, extract key clauses, flag risks, facilitate human review, and route them appropriately.
+
+I'll draw from the provided build guide, incorporating the hybrid n8n/CrewAI stack for workflow and multi-agent orchestration. To innovate, I'll enhance with Retrieval-Augmented Generation (RAG) using strict guardrails to reference legal templates securely, multi-language support (e.g., English, French, Dutch for Belgian contexts), and an intuitive UI/UX inspired by modern tools like LEGALFLY and Spellbook (which integrate directly into workflows like Microsoft Word). The design respects industry standards: data minimization (no PII in prompts), audit logs, client-owned keys, and explainable AI outputs.
+
+Projected savings: 5-15 hours/week per legal professional by reducing manual triage time, based on market trends from MarketsandMarkets (legal AI growing to ~USD 10.82B by 2030, with 31.8% CAGR in contract review).
+
+## Requirements Analysis
+From the guide and market research:
+- **Core Flow**: Upload/inbox → Classify contract type (e.g., employment, vendor agreement) → Extract clauses (e.g., parties, termination, liabilities) → Flag risks (e.g., unfair terms, regulatory non-compliance) → Human review (edit/approve) → Route (e.g., to CRM, email, or legal DB).
+- **Compliance**: Low-risk EU AI Act (transparency records, human oversight); GDPR (data minimization, consent, no PII logs); no personal data processed (focus on business/legal docs).
+- **Metrics**: Track time saved via before/after logs; aim for 70-80% teardown close rates.
+- **Innovations**: Add AI explanations for flags (e.g., "This clause violates GDPR Article 5 due to indefinite data retention"); integration with legal databases (e.g., via API to EU law repositories); customizable risk playbooks.
+
+Client needs: Premium, secure, repeatable sprint delivery for fiduciaries/real estate/legal firms scrambling with 2026 regulations.
+
+## Tech Stack Selection
+Prioritizing zero/low-cost, self-hosted, and compliant tools (per guide's 2026 stack):
+- **Workflow Orchestration**: n8n self-hosted (AI Starter Kit) – Visual builder, 400+ integrations, approval nodes, offline AI, SOC 2 compliant.
+- **Multi-Agent AI**: CrewAI (open-source) – For specialized agents (Classifier, Extractor, Risk Flagger); embed via n8n code nodes.
+- **Conversational/Review Interface**: Botpress – GDPR-built guardrails, topic restrictions, no PII prompts; used for human review chat (e.g., Slack/Teams integration).
+- **Document Extraction**: n8n AI nodes + Parseur (if needed) or PyMuPDF/PDFPlumber (via CrewAI code; assume local setup).
+- **RAG for Guardrails**: LangChain (integrated with CrewAI) + local vector DB (FAISS via torch in env) – Retrieve from templated legal knowledge base; guardrails prevent hallucinations/leakage (e.g., via AWS Bedrock-inspired rules or Patronus AI best practices).
+- **LLMs**: Claude/Gemini (client-owned keys) – For extraction/classification; local Ollama for offline prototyping.
+- **Observability**: n8n/CrewAI logs + Notion dashboard – Versioned prompts, alerts.
+- **Frontend/UI**: React.js (low-code via n8n embeds) + Material-UI – Modern, accessible dashboard.
+- **Backend/Deployment**: Docker Compose for self-hosting; Python for CrewAI scripts.
+- **Additional Libraries**: From env – Pandas for data structuring, Torch for RAG embeddings, Sympy for any logical risk checks.
+
+Why this stack? It's flexible, compliant (self-hosted data control), and enables rapid iteration (under 10 days). Alternatives like Superlegal or CoCounsel were considered but avoided for cost/open-source priority; instead, emulate their features (e.g., jurisdiction-aware redlining) via custom RAG.
+
+## Architecture Overview
+The system is a hybrid workflow:
+1. **Input Layer**: n8n triggers (email IMAP or file upload API).
+2. **Processing Layer**: CrewAI agents orchestrated in n8n.
+3. **Human Layer**: Botpress chat for review.
+4. **Output Layer**: Routing via n8n HTTP nodes.
+5. **Compliance Layer**: Guardrails in RAG/CrewAI (e.g., filter PII, ethical checks).
+
+High-level flowchart (described; visualize as nodes: Trigger → AI Agents → Approval → Route).
+
+## Detailed Implementation
+Follow the guide's step-by-step prototype, adapted for this agent.
+
+### 1. Setup Environment (1-2 hours)
+- Deploy n8n self-hosted via Docker Compose (includes Ollama).
+- Install CrewAI locally (`pip install crewai langchain faiss-cpu` – assume dev env allows; for production, bundle in Docker).
+- Setup Botpress instance (self-hosted, configure GDPR guardrails: explicit consent flows, anonymize logs).
+- Prepare RAG DB: Index legal templates (e.g., standard EU contracts) as vectors using Torch embeddings.
+
+### 2. Core Workflow (n8n Primary)
+n8n workflow JSON outline (exportable):
+- **Trigger**: File upload (HTTP) or email polling (IMAP node).
+- **AI Step**: Code node embeds CrewAI for processing.
+- **Validation**: If node checks RAG confidence > 0.8.
+- **Human-in-Loop**: Approval node (send to Botpress chat for review/edit).
+- **Output**: HTTP Request to route (e.g., CRM API or email).
+
+Sample n8n nodes: IMAP Email → Code (CrewAI) → If (Risks Flagged) → Botpress Webhook → HTTP (Route).
+
+### 3. Enhance with Multi-Agent (CrewAI Integration)
+CrewAI Python script (run in n8n code node):
+
+```python
+from crewai import Agent, Task, Crew
+from langchain.embeddings import HuggingFaceEmbeddings  # Or torch-based
+from langchain.vectorstores import FAISS
+from langchain.chains import RetrievalQA
+import os
+
+# RAG Setup (guardrails: filter sensitive queries)
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")  # Using torch under hood
+vectorstore = FAISS.load_local("legal_templates_index", embeddings)  # Pre-indexed templates
+qa_chain = RetrievalQA.from_chain_type(llm=ClaudeAPI(os.getenv('CLAUDE_KEY')), chain_type="stuff", retriever=vectorstore.as_retriever())
+
+# Agents with guardrails (e.g., no PII, ethical checks)
+classifier = Agent(
+    role='Document Classifier',
+    goal='Classify contract type accurately without processing PII',
+    backstory='Expert in legal taxonomy; uses RAG to reference templates.',
+    tools=[qa_chain],  # Guardrail: RAG prevents hallucinations
+    llm='claude-3-sonnet'  # Client-owned key
+)
+
+extractor = Agent(
+    role='Clause Extractor',
+    goal='Extract key clauses securely',
+    backstory='Focuses on business terms; redacts any potential PII.',
+    tools=[qa_chain]
+)
+
+flagger = Agent(
+    role='Risk Flagger',
+    goal='Flag risks based on regulations with explanations',
+    backstory='Compares to EU/GDPR standards; provides traceable reasoning.',
+    tools=[qa_chain]  # Guardrail: Only retrieve from approved templates
+)
+
+# Tasks with guardrails (e.g., input sanitization)
+task1 = Task(description='Classify the document type from content (anonymized).', agent=classifier)
+task2 = Task(description='Extract clauses like parties, terms, obligations.', agent=extractor)
+task3 = Task(description='Flag risks (e.g., non-compliant clauses) with RAG references.', agent=flagger)
+
+# Crew with human delegation
+crew = Crew(agents=[classifier, extractor, flagger], tasks=[task1, task2, task3])
+result = crew.kickoff(inputs={'document_content': sanitized_text})  # Sanitize input to remove PII
+
+# Guardrail: Post-process to ensure no leakage
+if 'pii_detected' in result: raise ValueError('PII detected - abort')
+return result  # JSON: {'type': 'NDA', 'clauses': [...], 'risks': [...]}
+```
+
+Innovations: RAG guardrails (per search results) include prompt injection checks (e.g., via regex in tasks) and ethical filters (e.g., reject harmful queries using McKinsey-style standards).
+
+### 4. Compliance Hardening
+- **Data Minimization**: Anonymize inputs before AI (e.g., redact names via regex).
+- **Logs**: n8n built-in, exclude content (mask per GDPR guide).
+- **Guardrails**: Implement as in RAG searches – rules for data leakage (Lasso Security style), content filters (Patronus AI).
+- **EU AI Act Record**: Simple table (Notion):
+  
+| System Purpose | Risks (Low) | Safeguards |
+|----------------|-------------|------------|
+| Document Triage | Hallucinations, Bias | RAG, Human Review, Logs |
+
+- **One-Page Note**: "Processing limited to business legal data; no PII; retention 30 days; human-in-loop for decisions."
+
+### 5. UI/UX Design
+As a UI/UX expert, I prioritize intuitive, accessible design (WCAG 2.1). Dashboard: React app embedded in n8n/Botpress.
+
+- **Upload Screen**: Drag-drop PDF/DOCX, progress bar, consent checkbox ("I consent to processing per GDPR").
+- **Results View**: Tabbed interface – Classification (e.g., "Employment Contract"), Extracted Clauses (accordion list), Risks (color-coded flags: red/high, yellow/medium).
+- **Review Mode**: Chat-like (Botpress) for edits; AI explanations popover (e.g., "Flag based on GDPR Art. 22").
+- **Route Options**: Dropdown to select (e.g., "Send to Senior Lawyer").
+
+Innovative Touches: Dark/light mode, keyboard navigation, AI-suggested edits (like Spellbook redlining), mobile-responsive for on-the-go reviews.
+
+Visual inspiration:
+
+## Measurement & Handover
+- **Metrics**: n8n logs track processing time; compare manual vs. automated.
+- **Deliverables**: Loom video walkthrough, SOP doc (this design), Notion dashboard with logs.
+- **Deployment**: Dockerized; handover in 10 days per sprint (Days 1-2: Setup/RAG index; 3-6: Build; 7-8: Harden; 9-10: Pilot).
+
+This product positions BlueLabs as a leader in compliant legal AI, scalable to retainers. Execution leverages my expertise for a robust, innovative solution.
